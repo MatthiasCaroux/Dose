@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { addEntry, getFavorites, getTodayStr, getCurrentTimeStr } from '../db'
+import BarcodeScanner from '../components/BarcodeScanner'
 
 // ─── Open Food Facts search ────────────────────────────────────────────────────
 
@@ -50,13 +51,11 @@ export default function Add() {
   const [selected, setSelected] = useState(null) // { label, kcalPer100g }
   const [portion, setPortion] = useState('100')
   const [customLabel, setCustomLabel] = useState('')
-  const [customKcal, setCustomKcal] = useState('')
-  const [scannerReady, setScannerReady] = useState(false)
+  const [customKcalPer100g, setCustomKcalPer100g] = useState('')
+  const [customPortion, setCustomPortion] = useState('100')
   const [scanError, setScanError] = useState(null)
   const [scanResult, setScanResult] = useState(null) // fetched product
   const [offline, setOffline] = useState(!navigator.onLine)
-  const scannerRef = useRef(null)
-  const scannerInstanceRef = useRef(null)
   const searchTimeout = useRef(null)
 
   useEffect(() => {
@@ -98,63 +97,23 @@ export default function Add() {
     return () => clearTimeout(searchTimeout.current)
   }, [query, offline])
 
-  // ── Barcode scanner ──
-
-  useEffect(() => {
-    if (tab !== 'scan') {
-      stopScanner()
+  const handleBarcodeDetected = async (decodedText) => {
+    if (offline) {
+      setScanError('En attente de réseau...')
       return
     }
-    startScanner()
-    return () => stopScanner()
-  }, [tab])
-
-  const startScanner = async () => {
-    setScanError(null)
-    setScanResult(null)
     try {
-      const { Html5Qrcode } = await import('html5-qrcode')
-      if (!scannerRef.current) return
-      const scanner = new Html5Qrcode('qr-reader')
-      scannerInstanceRef.current = scanner
-      await scanner.start(
-        { facingMode: 'environment' },
-        { fps: 10, qrbox: { width: 250, height: 150 } },
-        async (decodedText) => {
-          await stopScanner()
-          setScannerReady(false)
-          if (offline) {
-            setScanError('En attente de réseau...')
-            return
-          }
-          try {
-            const product = await fetchByBarcode(decodedText)
-            if (product) {
-              setScanResult(product)
-              setSelected(product)
-              setPortion('100')
-            } else {
-              setScanError('Produit non trouvé dans la base de données.')
-            }
-          } catch {
-            setScanError('Erreur réseau. Réessayez.')
-          }
-        },
-        () => {}
-      )
-      setScannerReady(true)
-    } catch (err) {
-      setScanError('Impossible d\'accéder à la caméra. Vérifiez les permissions.')
+      const product = await fetchByBarcode(decodedText)
+      if (product) {
+        setScanResult(product)
+        setSelected(product)
+        setPortion('100')
+      } else {
+        setScanError('Produit non trouvé dans la base de données.')
+      }
+    } catch {
+      setScanError('Erreur réseau. Réessayez.')
     }
-  }
-
-  const stopScanner = async () => {
-    if (scannerInstanceRef.current) {
-      try { await scannerInstanceRef.current.stop() } catch {}
-      try { scannerInstanceRef.current.clear() } catch {}
-      scannerInstanceRef.current = null
-    }
-    setScannerReady(false)
   }
 
   // ── Add entry helpers ──
@@ -187,10 +146,16 @@ export default function Add() {
   }
 
   const addManual = async () => {
-    if (!customLabel.trim() || !customKcal) return
+    if (!customLabel.trim() || !customKcalPer100g || !customPortion) return
+    const kcalPer100g = parseFloat(customKcalPer100g)
+    const grams = parseFloat(customPortion)
+    if (!Number.isFinite(kcalPer100g) || !Number.isFinite(grams) || grams <= 0 || kcalPer100g < 0) return
+    const kcal = Math.round((kcalPer100g * grams) / 100)
     await addEntry({
       label: customLabel.trim(),
-      kcal: parseInt(customKcal),
+      kcal,
+      kcalPer100g,
+      defaultPortion: grams,
       source: 'manual',
       date: getTodayStr(),
       time: getCurrentTimeStr()
@@ -206,6 +171,10 @@ export default function Add() {
 
   const computedKcal = selected && portion
     ? Math.round((selected.kcalPer100g * (parseInt(portion) || 0)) / 100)
+    : null
+
+  const computedManualKcal = customKcalPer100g && customPortion
+    ? Math.round((parseFloat(customKcalPer100g) * (parseFloat(customPortion) || 0)) / 100)
     : null
 
   return (
@@ -428,20 +397,39 @@ export default function Add() {
               onChange={e => setCustomLabel(e.target.value)}
               style={{ marginBottom: 8 }}
             />
-            <input
-              type="number"
-              placeholder="Calories (kcal)"
-              value={customKcal}
-              onChange={e => setCustomKcal(e.target.value)}
-              min="0"
-              style={{ marginBottom: 12 }}
-            />
+            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+              <input
+                type="number"
+                placeholder="kcal / 100g"
+                value={customKcalPer100g}
+                onChange={e => setCustomKcalPer100g(e.target.value)}
+                min="0"
+                style={{ marginBottom: 0, textAlign: 'center' }}
+              />
+              <input
+                type="number"
+                placeholder="Portion (g)"
+                value={customPortion}
+                onChange={e => setCustomPortion(e.target.value)}
+                min="1"
+                max="2000"
+                style={{ marginBottom: 0, textAlign: 'center' }}
+              />
+            </div>
+            <p style={{
+              color: 'var(--text-muted)',
+              fontSize: '0.82rem',
+              marginBottom: 12,
+              textAlign: 'center'
+            }}>
+              Total calculé: <span style={{ color: 'var(--text)', fontWeight: 600 }}>{computedManualKcal ?? '—'} kcal</span>
+            </p>
             <button
               className="btn btn-ghost btn-full"
               onClick={addManual}
-              disabled={!customLabel.trim() || !customKcal}
+              disabled={!customLabel.trim() || !customKcalPer100g || !customPortion || (parseFloat(customPortion) || 0) <= 0}
             >
-              Ajouter manuellement
+              Ajouter (règle de 3)
             </button>
           </div>
         </div>
@@ -466,26 +454,7 @@ export default function Add() {
           )}
 
           {!scanResult && (
-            <div
-              id="qr-reader"
-              ref={scannerRef}
-              style={{
-                width: '100%',
-                borderRadius: 12,
-                overflow: 'hidden',
-                background: 'var(--surface)',
-                minHeight: 200,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}
-            >
-              {!scannerReady && !scanError && (
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                  Initialisation de la caméra...
-                </p>
-              )}
-            </div>
+            !scanError && <BarcodeScanner onDetected={handleBarcodeDetected} />
           )}
 
           {scanError && (
@@ -493,7 +462,7 @@ export default function Add() {
               <p style={{ color: 'var(--text-muted)', marginBottom: 16, fontSize: '0.9rem' }}>
                 {scanError}
               </p>
-              <button className="btn btn-ghost" onClick={() => { setScanError(null); startScanner() }}>
+              <button className="btn btn-ghost" onClick={() => { setScanError(null); setScanResult(null) }}>
                 Réessayer
               </button>
             </div>
@@ -528,7 +497,7 @@ export default function Add() {
               <div style={{ display: 'flex', gap: 8 }}>
                 <button
                   className="btn btn-ghost"
-                  onClick={() => { setScanResult(null); setSelected(null); startScanner() }}
+                  onClick={() => { setScanResult(null); setSelected(null); setScanError(null) }}
                   style={{ flex: 1 }}
                 >
                   Rescanner
