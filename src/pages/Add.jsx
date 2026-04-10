@@ -69,7 +69,7 @@ export default function Add() {
   const [searching, setSearching] = useState(false)
   const [selected, setSelected] = useState(null) // { label, kcalPer100g }
   const [portion, setPortion] = useState('100')
-  const [quickKcal, setQuickKcal] = useState('')
+  const [quickKcal, setQuickKcal] = useState('300')
   const [quickFat, setQuickFat] = useState('')
   const [quickCarbs, setQuickCarbs] = useState('')
   const [quickProtein, setQuickProtein] = useState('')
@@ -272,6 +272,11 @@ export default function Add() {
     && (parseFloat(customKcalPer100g) || 0) >= 0
   )
 
+  const syncRuleOfThreeToDirect = () => {
+    if (computedManualKcal === null) return
+    setCustomDirectKcal(String(computedManualKcal))
+  }
+
   return (
     <div className="page add-page slide-up">
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24 }}>
@@ -326,7 +331,17 @@ export default function Add() {
         </div>
         <div className="card" style={{ marginTop: 12, padding: 12 }}>
           <p className="section-title" style={{ marginBottom: 8 }}>AJOUT RAPIDE PERSONNALISÉ</p>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+          <div style={{ marginBottom: 8 }}>
+            <p className="section-title" style={{ marginBottom: 6 }}>CALORIES</p>
+            <input
+              type="range"
+              min="0"
+              max="2000"
+              step="10"
+              value={quickKcal || 0}
+              onChange={e => setQuickKcal(e.target.value)}
+              style={{ marginBottom: 8 }}
+            />
             <input
               type="number"
               placeholder="Calories"
@@ -335,33 +350,44 @@ export default function Add() {
               min="0"
               style={{ marginBottom: 0, textAlign: 'center' }}
             />
-            <input
-              type="number"
-              placeholder="Lipides (g)"
-              value={quickFat}
-              onChange={e => setQuickFat(e.target.value)}
-              min="0"
-              step="0.1"
-              style={{ marginBottom: 0, textAlign: 'center' }}
-            />
-            <input
-              type="number"
-              placeholder="Glucides (g)"
-              value={quickCarbs}
-              onChange={e => setQuickCarbs(e.target.value)}
-              min="0"
-              step="0.1"
-              style={{ marginBottom: 0, textAlign: 'center' }}
-            />
-            <input
-              type="number"
-              placeholder="Protéines (g)"
-              value={quickProtein}
-              onChange={e => setQuickProtein(e.target.value)}
-              min="0"
-              step="0.1"
-              style={{ marginBottom: 0, textAlign: 'center' }}
-            />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 8, marginBottom: 8 }}>
+            <div style={{ border: '1px solid var(--text-muted)', borderRadius: 8, padding: 8 }}>
+              <p className="section-title" style={{ marginBottom: 6 }}>LIPIDES (g)</p>
+              <input
+                type="number"
+                placeholder="Lipides"
+                value={quickFat}
+                onChange={e => setQuickFat(e.target.value)}
+                min="0"
+                step="0.1"
+                style={{ marginBottom: 0, textAlign: 'center' }}
+              />
+            </div>
+            <div style={{ border: '1px solid var(--text-dim)', borderRadius: 8, padding: 8 }}>
+              <p className="section-title" style={{ marginBottom: 6 }}>GLUCIDES (g)</p>
+              <input
+                type="number"
+                placeholder="Glucides"
+                value={quickCarbs}
+                onChange={e => setQuickCarbs(e.target.value)}
+                min="0"
+                step="0.1"
+                style={{ marginBottom: 0, textAlign: 'center' }}
+              />
+            </div>
+            <div style={{ border: '1px solid var(--border-light)', borderRadius: 8, padding: 8 }}>
+              <p className="section-title" style={{ marginBottom: 6 }}>PROTÉINES (g)</p>
+              <input
+                type="number"
+                placeholder="Protéines"
+                value={quickProtein}
+                onChange={e => setQuickProtein(e.target.value)}
+                min="0"
+                step="0.1"
+                style={{ marginBottom: 0, textAlign: 'center' }}
+              />
+            </div>
           </div>
           <button
             className="btn btn-ghost btn-full"
@@ -523,15 +549,15 @@ export default function Add() {
               </div>
               {(computedFat !== null || computedCarbs !== null || computedProtein !== null) && (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 12 }}>
-                  <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 8, textAlign: 'center' }}>
+                  <div style={{ background: 'var(--surface)', border: '1px solid var(--text-muted)', borderRadius: 8, padding: 8, textAlign: 'center' }}>
                     <p className="section-title" style={{ marginBottom: 4 }}>LIPIDES</p>
                     <p style={{ fontWeight: 600 }}>{computedFat ?? '—'} g</p>
                   </div>
-                  <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 8, textAlign: 'center' }}>
+                  <div style={{ background: 'var(--surface)', border: '1px solid var(--text-dim)', borderRadius: 8, padding: 8, textAlign: 'center' }}>
                     <p className="section-title" style={{ marginBottom: 4 }}>GLUCIDES</p>
                     <p style={{ fontWeight: 600 }}>{computedCarbs ?? '—'} g</p>
                   </div>
-                  <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 8, textAlign: 'center' }}>
+                  <div style={{ background: 'var(--surface)', border: '1px solid var(--border-light)', borderRadius: 8, padding: 8, textAlign: 'center' }}>
                     <p className="section-title" style={{ marginBottom: 4 }}>PROTÉINES</p>
                     <p style={{ fontWeight: 600 }}>{computedProtein ?? '—'} g</p>
                   </div>
@@ -567,6 +593,15 @@ export default function Add() {
               min="0"
               style={{ marginBottom: 8, textAlign: 'center' }}
             />
+            <input
+              type="range"
+              min="0"
+              max="2000"
+              step="10"
+              value={customDirectKcal || 0}
+              onChange={e => setCustomDirectKcal(e.target.value)}
+              style={{ marginBottom: 8 }}
+            />
             <p style={{
               color: 'var(--text-muted)',
               fontSize: '0.76rem',
@@ -597,11 +632,19 @@ export default function Add() {
             <p style={{
               color: 'var(--text-muted)',
               fontSize: '0.82rem',
-              marginBottom: 12,
+              marginBottom: 8,
               textAlign: 'center'
             }}>
               Total calculé: <span style={{ color: 'var(--text)', fontWeight: 600 }}>{computedManualKcal ?? '—'} kcal</span>
             </p>
+            <button
+              className="btn btn-ghost btn-full"
+              onClick={syncRuleOfThreeToDirect}
+              disabled={computedManualKcal === null}
+              style={{ marginBottom: 10 }}
+            >
+              Utiliser ce calcul comme calories finales
+            </button>
             <button
               className="btn btn-ghost btn-full"
               onClick={addManual}
