@@ -75,18 +75,16 @@ export default function Home() {
         <p className="label-sm" style={{ marginBottom: 8 }}>
           {formatDate(today)}
         </p>
-        <p className="label-sm" style={{ marginBottom: 4 }}>DOSE RESTANTE</p>
+        <p className="label-sm" style={{ marginBottom: 4 }}>DOSE CONSOMMÉE</p>
         <h1 style={{ color: getRemainingColor(), transition: 'color 0.5s ease' }}>
-          {remaining > 0 ? remaining : 0}
+          {totalKcal}
           <span style={{ fontSize: '1.5rem', fontWeight: 400, color: 'var(--text-muted)', marginLeft: 8 }}>
             kcal
           </span>
         </h1>
-        {remaining < 0 && (
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: 8 }}>
-            +{Math.abs(remaining)} kcal au-delà de l'objectif
-          </p>
-        )}
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: 8 }}>
+          {remaining >= 0 ? `${remaining} kcal restantes` : `+${Math.abs(remaining)} kcal au-delà de l'objectif`}
+        </p>
       </div>
 
       {/* Zone de Confort */}

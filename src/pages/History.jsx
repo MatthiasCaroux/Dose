@@ -1,37 +1,83 @@
 import { useState, useEffect } from 'react'
-import { getAllEntries, deleteEntry, getDatesWithEntries } from '../db'
+import { useNavigate } from 'react-router-dom'
+import { getEntriesForDate, deleteEntry, updateEntry, getTodayStr } from '../db'
 
 export default function History() {
-  const [dates, setDates] = useState([])
-  const [selectedDate, setSelectedDate] = useState(null)
-  const [entriesByDate, setEntriesByDate] = useState({})
+  const navigate = useNavigate()
+  const [selectedDate, setSelectedDate] = useState(getTodayStr())
+  const [entries, setEntries] = useState([])
   const [deleteConfirm, setDeleteConfirm] = useState(null)
+  const [editingId, setEditingId] = useState(null)
+  const [editKcal, setEditKcal] = useState('')
+  const [editPortion, setEditPortion] = useState('')
 
   useEffect(() => {
-    loadAll()
-  }, [])
+    loadForDate(selectedDate)
+  }, [selectedDate])
 
-  const loadAll = async () => {
-    const all = await getAllEntries()
-    const byDate = {}
-    for (const entry of all) {
-      if (!byDate[entry.date]) byDate[entry.date] = []
-      byDate[entry.date].push(entry)
-    }
-    // Sort entries within each date by time
-    for (const date of Object.keys(byDate)) {
-      byDate[date].sort((a, b) => a.time.localeCompare(b.time))
-    }
-    setEntriesByDate(byDate)
-    const d = Object.keys(byDate).sort().reverse()
-    setDates(d)
-    if (d.length > 0 && !selectedDate) setSelectedDate(d[0])
+  const loadForDate = async (date) => {
+    const dayEntries = await getEntriesForDate(date)
+    setEntries(dayEntries.sort((a, b) => a.time.localeCompare(b.time)))
   }
 
   const handleDelete = async (id) => {
     await deleteEntry(id)
     setDeleteConfirm(null)
-    loadAll()
+    if (editingId === id) {
+      setEditingId(null)
+      setEditKcal('')
+      setEditPortion('')
+    }
+    loadForDate(selectedDate)
+  }
+
+  const startEdit = (entry) => {
+    setDeleteConfirm(null)
+    setEditingId(entry.id)
+    setEditKcal(String(entry.kcal ?? ''))
+    if (entry.kcalPer100g) {
+      const basePortion = entry.defaultPortion
+        || (entry.kcal ? Math.round((entry.kcal * 100) / entry.kcalPer100g) : 100)
+      setEditPortion(String(basePortion))
+    } else {
+      setEditPortion('')
+    }
+  }
+
+  const cancelEdit = () => {
+    setEditingId(null)
+    setEditKcal('')
+    setEditPortion('')
+  }
+
+  const onPortionChange = (value, entry) => {
+    setEditPortion(value)
+    const grams = parseFloat(value)
+    if (!entry.kcalPer100g || !Number.isFinite(grams) || grams <= 0) return
+    setEditKcal(String(Math.round((entry.kcalPer100g * grams) / 100)))
+  }
+
+  const saveEdit = async (entry) => {
+    const kcal = parseInt(editKcal, 10)
+    if (!Number.isFinite(kcal) || kcal < 0) return
+    const updates = { kcal }
+    if (entry.kcalPer100g && editPortion) {
+      const grams = parseFloat(editPortion)
+      if (Number.isFinite(grams) && grams > 0) {
+        updates.defaultPortion = grams
+      }
+    }
+    await updateEntry(entry.id, updates)
+    cancelEdit()
+    loadForDate(selectedDate)
+  }
+
+  const shiftDay = (delta) => {
+    const d = new Date(selectedDate + 'T00:00:00')
+    d.setDate(d.getDate() + delta)
+    setSelectedDate(d.toISOString().slice(0, 10))
+    setDeleteConfirm(null)
+    cancelEdit()
   }
 
   const formatDate = (str) => {
@@ -39,150 +85,144 @@ export default function History() {
     return d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
   }
 
-  const formatDateShort = (str) => {
-    const d = new Date(str + 'T00:00:00')
-    const day = d.toLocaleDateString('fr-FR', { weekday: 'short' })
-    const num = d.getDate()
-    return { day: day.charAt(0).toUpperCase() + day.slice(1, 3), num }
-  }
-
-  const totalForDate = (date) => {
-    return (entriesByDate[date] || []).reduce((sum, e) => sum + e.kcal, 0)
-  }
+  const totalForDate = entries.reduce((sum, e) => sum + e.kcal, 0)
 
   return (
     <div className="page history-page">
       <h2 style={{ marginBottom: 24 }}>Historique</h2>
 
-      {dates.length === 0 ? (
-        <div className="empty-state">
-          <p style={{ fontSize: '2rem', marginBottom: 12 }}>○</p>
-          <p>Aucun historique</p>
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: '44px 1fr 44px',
+        gap: 8,
+        alignItems: 'center',
+        marginBottom: 12
+      }}>
+        <button onClick={() => shiftDay(-1)} style={{ minWidth: 'unset', minHeight: 40 }}>←</button>
+        <input
+          type="date"
+          value={selectedDate}
+          onChange={e => setSelectedDate(e.target.value)}
+          style={{ textAlign: 'center', marginBottom: 0 }}
+        />
+        <button onClick={() => shiftDay(1)} style={{ minWidth: 'unset', minHeight: 40 }}>→</button>
+      </div>
+
+      <button
+        className="btn btn-ghost btn-full"
+        onClick={() => navigate(`/add?date=${selectedDate}`)}
+        style={{ marginBottom: 20 }}
+      >
+        Ajouter pour ce jour
+      </button>
+
+      <div className="fade-in" key={selectedDate}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 16 }}>
+          <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+            {formatDate(selectedDate)}
+          </p>
+          <p style={{ fontSize: '1.1rem', fontWeight: 700 }}>
+            {totalForDate} <span style={{ fontSize: '0.75rem', fontWeight: 400, color: 'var(--text-muted)' }}>kcal</span>
+          </p>
         </div>
-      ) : (
-        <>
-          {/* Scrollable date list */}
-          <div style={{
-            display: 'flex',
-            gap: 10,
-            overflowX: 'auto',
-            paddingBottom: 4,
-            marginBottom: 20,
-            scrollbarWidth: 'none'
-          }}>
-            {dates.map(date => {
-              const { day, num } = formatDateShort(date)
-              const isSelected = selectedDate === date
-              return (
-                <button
-                  key={date}
-                  onClick={() => setSelectedDate(date)}
-                  style={{
-                    flexShrink: 0,
-                    width: 54,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    gap: 4,
-                    padding: '10px 4px',
-                    background: isSelected ? 'var(--text)' : 'var(--surface)',
-                    color: isSelected ? 'var(--bg)' : 'var(--text)',
-                    border: isSelected ? 'none' : '1px solid var(--border)',
-                    borderRadius: 10,
-                    minHeight: 'unset',
-                    minWidth: 'unset',
-                    transition: 'all 0.15s'
-                  }}
-                >
-                  <span style={{ fontSize: '0.65rem', fontWeight: 600, letterSpacing: '0.05em', opacity: isSelected ? 0.7 : 0.6 }}>
-                    {day}
-                  </span>
-                  <span style={{ fontSize: '1.1rem', fontWeight: 700 }}>{num}</span>
-                  <span style={{
-                    width: 4, height: 4, borderRadius: '50%',
-                    background: isSelected ? 'var(--bg)' : 'var(--text-muted)'
-                  }} />
-                </button>
-              )
-            })}
-          </div>
 
-          {/* Selected day detail */}
-          {selectedDate && (
-            <div className="fade-in" key={selectedDate}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 16 }}>
-                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                  {formatDate(selectedDate)}
-                </p>
-                <p style={{ fontSize: '1.1rem', fontWeight: 700 }}>
-                  {totalForDate(selectedDate)} <span style={{ fontSize: '0.75rem', fontWeight: 400, color: 'var(--text-muted)' }}>kcal</span>
-                </p>
-              </div>
+        {entries.length === 0 ? (
+          <p className="empty-state">Aucune entrée ce jour</p>
+        ) : (
+          <div className="entry-list">
+            {entries.map(entry => (
+              <div
+                key={entry.id}
+                className={`entry-item ${deleteConfirm === entry.id ? 'show-delete' : ''}`}
+                style={{ display: 'block' }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                  <div className="entry-info">
+                    <div className="entry-label">{entry.label}</div>
+                    <div className="entry-meta">{entry.time}</div>
+                  </div>
+                  <div className="entry-kcal">{entry.kcal} kcal</div>
+                </div>
 
-              {(entriesByDate[selectedDate] || []).length === 0 ? (
-                <p className="empty-state">Aucune entrée ce jour</p>
-              ) : (
-                <div className="entry-list">
-                  {(entriesByDate[selectedDate] || []).map(entry => (
-                    <div
-                      key={entry.id}
-                      className={`entry-item ${deleteConfirm === entry.id ? 'show-delete' : ''}`}
-                    >
-                      <div className="entry-info">
-                        <div className="entry-label">{entry.label}</div>
-                        <div className="entry-meta">{entry.time}</div>
-                      </div>
-                      <div className="entry-kcal">{entry.kcal} kcal</div>
-                      {deleteConfirm === entry.id ? (
-                        <div style={{ display: 'flex', gap: 6 }}>
-                          <button
-                            onClick={() => handleDelete(entry.id)}
-                            style={{
-                              background: '#3a0000',
-                              color: '#ff6b6b',
-                              border: '1px solid #5a0000',
-                              borderRadius: 6,
-                              padding: '4px 10px',
-                              fontSize: '0.8rem',
-                              minHeight: 32,
-                              minWidth: 'unset'
-                            }}
-                          >
-                            Supprimer
-                          </button>
-                          <button
-                            onClick={() => setDeleteConfirm(null)}
-                            style={{
-                              background: 'var(--surface)',
-                              color: 'var(--text-muted)',
-                              border: '1px solid var(--border-light)',
-                              borderRadius: 6,
-                              padding: '4px 10px',
-                              fontSize: '0.8rem',
-                              minHeight: 32,
-                              minWidth: 'unset'
-                            }}
-                          >
-                            Annuler
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          className="entry-delete"
-                          onClick={() => setDeleteConfirm(entry.id)}
-                          style={{ minWidth: 'unset' }}
-                        >
-                          ✕
-                        </button>
+                {editingId === entry.id ? (
+                  <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: entry.kcalPer100g ? '1fr 1fr' : '1fr', gap: 8 }}>
+                      <input
+                        type="number"
+                        min="0"
+                        value={editKcal}
+                        onChange={e => setEditKcal(e.target.value)}
+                        placeholder="Calories"
+                        style={{ marginBottom: 0, textAlign: 'center' }}
+                      />
+                      {entry.kcalPer100g && (
+                        <input
+                          type="number"
+                          min="1"
+                          max="2000"
+                          value={editPortion}
+                          onChange={e => onPortionChange(e.target.value, entry)}
+                          placeholder="Portion (g)"
+                          style={{ marginBottom: 0, textAlign: 'center' }}
+                        />
                       )}
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </>
-      )}
+                    {entry.kcalPer100g && (
+                      <p style={{ color: 'var(--text-muted)', fontSize: '0.76rem', textAlign: 'center' }}>
+                        {entry.kcalPer100g} kcal / 100g
+                      </p>
+                    )}
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button className="btn btn-primary" onClick={() => saveEdit(entry)} style={{ flex: 1 }}>Enregistrer</button>
+                      <button className="btn btn-ghost" onClick={cancelEdit} style={{ flex: 1 }}>Annuler</button>
+                    </div>
+                  </div>
+                ) : deleteConfirm === entry.id ? (
+                  <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+                    <button
+                      onClick={() => handleDelete(entry.id)}
+                      style={{
+                        flex: 1,
+                        background: '#3a0000',
+                        color: '#ff6b6b',
+                        border: '1px solid #5a0000',
+                        borderRadius: 6,
+                        padding: '4px 10px',
+                        fontSize: '0.8rem',
+                        minHeight: 32,
+                        minWidth: 'unset'
+                      }}
+                    >
+                      Supprimer
+                    </button>
+                    <button
+                      onClick={() => setDeleteConfirm(null)}
+                      style={{
+                        flex: 1,
+                        background: 'var(--surface)',
+                        color: 'var(--text-muted)',
+                        border: '1px solid var(--border-light)',
+                        borderRadius: 6,
+                        padding: '4px 10px',
+                        fontSize: '0.8rem',
+                        minHeight: 32,
+                        minWidth: 'unset'
+                      }}
+                    >
+                      Annuler
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+                    <button className="btn btn-ghost" onClick={() => startEdit(entry)} style={{ flex: 1 }}>Modifier</button>
+                    <button className="entry-delete" onClick={() => setDeleteConfirm(entry.id)} style={{ minWidth: 44 }}>✕</button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

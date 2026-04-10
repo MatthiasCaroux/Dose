@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { addEntry, getFavorites, getTodayStr, getCurrentTimeStr } from '../db'
 import BarcodeScanner from '../components/BarcodeScanner'
 
@@ -43,6 +43,9 @@ const QUICK_ITEMS = [
 
 export default function Add() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const requestedDate = searchParams.get('date')
+  const targetDate = /^\d{4}-\d{2}-\d{2}$/.test(requestedDate || '') ? requestedDate : getTodayStr()
   const [tab, setTab] = useState('search') // 'search' | 'scan'
   const [query, setQuery] = useState('')
   const [searchResults, setSearchResults] = useState([])
@@ -51,6 +54,7 @@ export default function Add() {
   const [selected, setSelected] = useState(null) // { label, kcalPer100g }
   const [portion, setPortion] = useState('100')
   const [customLabel, setCustomLabel] = useState('')
+  const [customDirectKcal, setCustomDirectKcal] = useState('')
   const [customKcalPer100g, setCustomKcalPer100g] = useState('')
   const [customPortion, setCustomPortion] = useState('100')
   const [scanError, setScanError] = useState(null)
@@ -123,7 +127,7 @@ export default function Add() {
       label: item.label,
       kcal: item.kcal,
       source: 'quick',
-      date: getTodayStr(),
+      date: targetDate,
       time: getCurrentTimeStr()
     })
     navigate('/')
@@ -139,14 +143,30 @@ export default function Add() {
       kcalPer100g: selected.kcalPer100g,
       defaultPortion: p,
       source: scanResult ? 'scan' : 'favorite',
-      date: getTodayStr(),
+      date: targetDate,
       time: getCurrentTimeStr()
     })
     navigate('/')
   }
 
   const addManual = async () => {
-    if (!customLabel.trim() || !customKcalPer100g || !customPortion) return
+    if (!customLabel.trim()) return
+    const directKcal = parseFloat(customDirectKcal)
+    const hasDirectKcal = Number.isFinite(directKcal) && directKcal >= 0
+
+    if (hasDirectKcal) {
+      await addEntry({
+        label: customLabel.trim(),
+        kcal: Math.round(directKcal),
+        source: 'manual',
+        date: targetDate,
+        time: getCurrentTimeStr()
+      })
+      navigate('/')
+      return
+    }
+
+    if (!customKcalPer100g || !customPortion) return
     const kcalPer100g = parseFloat(customKcalPer100g)
     const grams = parseFloat(customPortion)
     if (!Number.isFinite(kcalPer100g) || !Number.isFinite(grams) || grams <= 0 || kcalPer100g < 0) return
@@ -157,7 +177,7 @@ export default function Add() {
       kcalPer100g,
       defaultPortion: grams,
       source: 'manual',
-      date: getTodayStr(),
+      date: targetDate,
       time: getCurrentTimeStr()
     })
     navigate('/')
@@ -177,6 +197,14 @@ export default function Add() {
     ? Math.round((parseFloat(customKcalPer100g) * (parseFloat(customPortion) || 0)) / 100)
     : null
 
+  const hasValidDirectKcal = Number.isFinite(parseFloat(customDirectKcal)) && parseFloat(customDirectKcal) >= 0
+  const hasValidRuleOfThree = Boolean(
+    customKcalPer100g
+    && customPortion
+    && (parseFloat(customPortion) || 0) > 0
+    && (parseFloat(customKcalPer100g) || 0) >= 0
+  )
+
   return (
     <div className="page add-page slide-up">
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24 }}>
@@ -194,6 +222,10 @@ export default function Add() {
         </button>
         <h2>Ajouter</h2>
       </div>
+
+      <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginBottom: 16 }}>
+        Date d'ajout : {targetDate}
+      </p>
 
       {/* ── Quick buttons ── */}
       <div style={{ marginBottom: 24 }}>
@@ -397,6 +429,22 @@ export default function Add() {
               onChange={e => setCustomLabel(e.target.value)}
               style={{ marginBottom: 8 }}
             />
+            <input
+              type="number"
+              placeholder="Calories directes (ex: 150)"
+              value={customDirectKcal}
+              onChange={e => setCustomDirectKcal(e.target.value)}
+              min="0"
+              style={{ marginBottom: 8, textAlign: 'center' }}
+            />
+            <p style={{
+              color: 'var(--text-muted)',
+              fontSize: '0.76rem',
+              marginBottom: 8,
+              textAlign: 'center'
+            }}>
+              Ou utiliser la règle de 3
+            </p>
             <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
               <input
                 type="number"
@@ -427,9 +475,9 @@ export default function Add() {
             <button
               className="btn btn-ghost btn-full"
               onClick={addManual}
-              disabled={!customLabel.trim() || !customKcalPer100g || !customPortion || (parseFloat(customPortion) || 0) <= 0}
+              disabled={!customLabel.trim() || (!hasValidDirectKcal && !hasValidRuleOfThree)}
             >
-              Ajouter (règle de 3)
+              Ajouter manuellement
             </button>
           </div>
         </div>

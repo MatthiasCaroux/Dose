@@ -70,6 +70,15 @@ export async function deleteEntry(id) {
   await db.delete('entries', id)
 }
 
+export async function updateEntry(id, updates) {
+  const db = await getDB()
+  const current = await db.get('entries', id)
+  if (!current) return null
+  const next = { ...current, ...updates, id }
+  await db.put('entries', next)
+  return next
+}
+
 export async function getAllEntries() {
   const db = await getDB()
   return db.getAll('entries')
