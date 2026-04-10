@@ -54,7 +54,11 @@ export async function addEntry(entry) {
   })
   // Track usage for auto-favorite
   if (entry.label) {
-    await incrementUsage(entry.label, entry.kcalPer100g, entry.defaultPortion)
+    await incrementUsage(entry.label, entry.kcalPer100g, entry.defaultPortion, {
+      fatPer100g: entry.fatPer100g,
+      carbsPer100g: entry.carbsPer100g,
+      proteinPer100g: entry.proteinPer100g
+    })
   }
   return id
 }
@@ -124,7 +128,7 @@ export async function getAllSettings() {
 
 // ─── Auto-favorite logic ───────────────────────────────────────────────────────
 
-async function incrementUsage(label, kcalPer100g, defaultPortion) {
+async function incrementUsage(label, kcalPer100g, defaultPortion, macros = {}) {
   const db = await getDB()
   const tx = db.transaction(['foodUsage', 'favorites'], 'readwrite')
   const usageStore = tx.objectStore('foodUsage')
@@ -132,14 +136,29 @@ async function incrementUsage(label, kcalPer100g, defaultPortion) {
 
   const existing = await usageStore.get(label)
   const count = existing ? existing.count + 1 : 1
-  await usageStore.put({ label, count, kcalPer100g, defaultPortion })
+  await usageStore.put({
+    label,
+    count,
+    kcalPer100g,
+    defaultPortion,
+    fatPer100g: macros.fatPer100g,
+    carbsPer100g: macros.carbsPer100g,
+    proteinPer100g: macros.proteinPer100g
+  })
 
   if (count === 3) {
     // Auto-add to favorites
     const favIndex = favStore.index('label')
     const alreadyFav = await favIndex.get(label)
     if (!alreadyFav) {
-      await favStore.add({ label, kcalPer100g: kcalPer100g || null, defaultPortion: defaultPortion || 100 })
+      await favStore.add({
+        label,
+        kcalPer100g: kcalPer100g || null,
+        defaultPortion: defaultPortion || 100,
+        fatPer100g: macros.fatPer100g || null,
+        carbsPer100g: macros.carbsPer100g || null,
+        proteinPer100g: macros.proteinPer100g || null
+      })
     }
   }
   await tx.done

@@ -5,6 +5,16 @@ import BarcodeScanner from '../components/BarcodeScanner'
 
 // ─── Open Food Facts search ────────────────────────────────────────────────────
 
+function toNumber(value) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function toOneDecimal(value) {
+  const number = toNumber(value)
+  return number === null ? null : Math.round(number * 10) / 10
+}
+
 async function searchOFF(query) {
   const url = `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(query)}&search_simple=1&action=process&json=1&page_size=10&fields=product_name,nutriments,brands`
   const res = await fetch(url, { signal: AbortSignal.timeout(8000) })
@@ -13,7 +23,10 @@ async function searchOFF(query) {
     .filter(p => p.product_name && p.nutriments?.['energy-kcal_100g'])
     .map(p => ({
       label: p.product_name + (p.brands ? ` — ${p.brands.split(',')[0]}` : ''),
-      kcalPer100g: Math.round(p.nutriments['energy-kcal_100g'])
+      kcalPer100g: Math.round(p.nutriments['energy-kcal_100g']),
+      fatPer100g: toOneDecimal(p.nutriments?.fat_100g),
+      carbsPer100g: toOneDecimal(p.nutriments?.carbohydrates_100g),
+      proteinPer100g: toOneDecimal(p.nutriments?.proteins_100g)
     }))
 }
 
@@ -27,7 +40,10 @@ async function fetchByBarcode(barcode) {
   if (!kcal) return null
   return {
     label: p.product_name || `Produit ${barcode}`,
-    kcalPer100g: Math.round(kcal)
+    kcalPer100g: Math.round(kcal),
+    fatPer100g: toOneDecimal(p.nutriments?.fat_100g),
+    carbsPer100g: toOneDecimal(p.nutriments?.carbohydrates_100g),
+    proteinPer100g: toOneDecimal(p.nutriments?.proteins_100g)
   }
 }
 
@@ -53,6 +69,10 @@ export default function Add() {
   const [searching, setSearching] = useState(false)
   const [selected, setSelected] = useState(null) // { label, kcalPer100g }
   const [portion, setPortion] = useState('100')
+  const [quickKcal, setQuickKcal] = useState('')
+  const [quickFat, setQuickFat] = useState('')
+  const [quickCarbs, setQuickCarbs] = useState('')
+  const [quickProtein, setQuickProtein] = useState('')
   const [customLabel, setCustomLabel] = useState('')
   const [customDirectKcal, setCustomDirectKcal] = useState('')
   const [customKcalPer100g, setCustomKcalPer100g] = useState('')
@@ -126,6 +146,28 @@ export default function Add() {
     await addEntry({
       label: item.label,
       kcal: item.kcal,
+      fat: item.fat ?? null,
+      carbs: item.carbs ?? null,
+      protein: item.protein ?? null,
+      source: 'quick',
+      date: targetDate,
+      time: getCurrentTimeStr()
+    })
+    navigate('/')
+  }
+
+  const addQuickCustom = async () => {
+    const kcal = parseInt(quickKcal, 10)
+    if (!Number.isFinite(kcal) || kcal < 0) return
+    const fat = toNumber(quickFat)
+    const carbs = toNumber(quickCarbs)
+    const protein = toNumber(quickProtein)
+    await addEntry({
+      label: 'Ajout rapide',
+      kcal,
+      fat: fat !== null && fat >= 0 ? fat : null,
+      carbs: carbs !== null && carbs >= 0 ? carbs : null,
+      protein: protein !== null && protein >= 0 ? protein : null,
       source: 'quick',
       date: targetDate,
       time: getCurrentTimeStr()
@@ -137,10 +179,25 @@ export default function Add() {
     if (!selected) return
     const p = parseInt(portion) || 100
     const kcal = Math.round((selected.kcalPer100g * p) / 100)
+    const fat = selected.fatPer100g !== null && selected.fatPer100g !== undefined
+      ? Math.round(((selected.fatPer100g * p) / 100) * 10) / 10
+      : null
+    const carbs = selected.carbsPer100g !== null && selected.carbsPer100g !== undefined
+      ? Math.round(((selected.carbsPer100g * p) / 100) * 10) / 10
+      : null
+    const protein = selected.proteinPer100g !== null && selected.proteinPer100g !== undefined
+      ? Math.round(((selected.proteinPer100g * p) / 100) * 10) / 10
+      : null
     await addEntry({
       label: selected.label,
       kcal,
+      fat,
+      carbs,
+      protein,
       kcalPer100g: selected.kcalPer100g,
+      fatPer100g: selected.fatPer100g,
+      carbsPer100g: selected.carbsPer100g,
+      proteinPer100g: selected.proteinPer100g,
       defaultPortion: p,
       source: scanResult ? 'scan' : 'favorite',
       date: targetDate,
@@ -191,6 +248,16 @@ export default function Add() {
 
   const computedKcal = selected && portion
     ? Math.round((selected.kcalPer100g * (parseInt(portion) || 0)) / 100)
+    : null
+
+  const computedFat = selected?.fatPer100g !== null && selected?.fatPer100g !== undefined && portion
+    ? Math.round(((selected.fatPer100g * (parseInt(portion) || 0)) / 100) * 10) / 10
+    : null
+  const computedCarbs = selected?.carbsPer100g !== null && selected?.carbsPer100g !== undefined && portion
+    ? Math.round(((selected.carbsPer100g * (parseInt(portion) || 0)) / 100) * 10) / 10
+    : null
+  const computedProtein = selected?.proteinPer100g !== null && selected?.proteinPer100g !== undefined && portion
+    ? Math.round(((selected.proteinPer100g * (parseInt(portion) || 0)) / 100) * 10) / 10
     : null
 
   const computedManualKcal = customKcalPer100g && customPortion
@@ -256,6 +323,53 @@ export default function Add() {
               <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{item.kcal} kcal</span>
             </button>
           ))}
+        </div>
+        <div className="card" style={{ marginTop: 12, padding: 12 }}>
+          <p className="section-title" style={{ marginBottom: 8 }}>AJOUT RAPIDE PERSONNALISÉ</p>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+            <input
+              type="number"
+              placeholder="Calories"
+              value={quickKcal}
+              onChange={e => setQuickKcal(e.target.value)}
+              min="0"
+              style={{ marginBottom: 0, textAlign: 'center' }}
+            />
+            <input
+              type="number"
+              placeholder="Lipides (g)"
+              value={quickFat}
+              onChange={e => setQuickFat(e.target.value)}
+              min="0"
+              step="0.1"
+              style={{ marginBottom: 0, textAlign: 'center' }}
+            />
+            <input
+              type="number"
+              placeholder="Glucides (g)"
+              value={quickCarbs}
+              onChange={e => setQuickCarbs(e.target.value)}
+              min="0"
+              step="0.1"
+              style={{ marginBottom: 0, textAlign: 'center' }}
+            />
+            <input
+              type="number"
+              placeholder="Protéines (g)"
+              value={quickProtein}
+              onChange={e => setQuickProtein(e.target.value)}
+              min="0"
+              step="0.1"
+              style={{ marginBottom: 0, textAlign: 'center' }}
+            />
+          </div>
+          <button
+            className="btn btn-ghost btn-full"
+            onClick={addQuickCustom}
+            disabled={!quickKcal || (parseInt(quickKcal, 10) < 0)}
+          >
+            Ajouter rapide personnalisé
+          </button>
         </div>
       </div>
 
@@ -407,6 +521,22 @@ export default function Add() {
                   <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>kcal</p>
                 </div>
               </div>
+              {(computedFat !== null || computedCarbs !== null || computedProtein !== null) && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 12 }}>
+                  <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 8, textAlign: 'center' }}>
+                    <p className="section-title" style={{ marginBottom: 4 }}>LIPIDES</p>
+                    <p style={{ fontWeight: 600 }}>{computedFat ?? '—'} g</p>
+                  </div>
+                  <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 8, textAlign: 'center' }}>
+                    <p className="section-title" style={{ marginBottom: 4 }}>GLUCIDES</p>
+                    <p style={{ fontWeight: 600 }}>{computedCarbs ?? '—'} g</p>
+                  </div>
+                  <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 8, textAlign: 'center' }}>
+                    <p className="section-title" style={{ marginBottom: 4 }}>PROTÉINES</p>
+                    <p style={{ fontWeight: 600 }}>{computedProtein ?? '—'} g</p>
+                  </div>
+                </div>
+              )}
               <button
                 className="btn btn-primary btn-full"
                 onClick={addFromSelected}
@@ -542,6 +672,22 @@ export default function Add() {
                   <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>kcal</p>
                 </div>
               </div>
+              {(computedFat !== null || computedCarbs !== null || computedProtein !== null) && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 12 }}>
+                  <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 8, textAlign: 'center' }}>
+                    <p className="section-title" style={{ marginBottom: 4 }}>LIPIDES</p>
+                    <p style={{ fontWeight: 600 }}>{computedFat ?? '—'} g</p>
+                  </div>
+                  <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 8, textAlign: 'center' }}>
+                    <p className="section-title" style={{ marginBottom: 4 }}>GLUCIDES</p>
+                    <p style={{ fontWeight: 600 }}>{computedCarbs ?? '—'} g</p>
+                  </div>
+                  <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 8, textAlign: 'center' }}>
+                    <p className="section-title" style={{ marginBottom: 4 }}>PROTÉINES</p>
+                    <p style={{ fontWeight: 600 }}>{computedProtein ?? '—'} g</p>
+                  </div>
+                </div>
+              )}
               <div style={{ display: 'flex', gap: 8 }}>
                 <button
                   className="btn btn-ghost"

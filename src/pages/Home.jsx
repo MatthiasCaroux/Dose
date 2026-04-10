@@ -31,6 +31,13 @@ export default function Home() {
   }, [load])
 
   const totalKcal = entries.reduce((sum, e) => sum + e.kcal, 0)
+  const totalFat = Math.round(entries.reduce((sum, e) => sum + (Number(e.fat) || 0), 0) * 10) / 10
+  const totalCarbs = Math.round(entries.reduce((sum, e) => sum + (Number(e.carbs) || 0), 0) * 10) / 10
+  const totalProtein = Math.round(entries.reduce((sum, e) => sum + (Number(e.protein) || 0), 0) * 10) / 10
+  const macroTotal = totalFat + totalCarbs + totalProtein
+  const fatRatio = macroTotal > 0 ? (totalFat / macroTotal) * 100 : 0
+  const carbsRatio = macroTotal > 0 ? (totalCarbs / macroTotal) * 100 : 0
+  const proteinRatio = macroTotal > 0 ? (totalProtein / macroTotal) * 100 : 0
   const remaining = dailyGoal - totalKcal
   const lowerBound = dailyGoal - comfortRange
   const upperBound = dailyGoal + comfortRange
@@ -114,6 +121,39 @@ export default function Home() {
       </div>
 
       <div className="divider" />
+
+      <div style={{ marginTop: 16, marginBottom: 10 }}>
+        <p className="label-sm" style={{ marginBottom: 10 }}>VISUEL MACROS</p>
+        <div style={{ display: 'grid', gap: 8 }}>
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.76rem', color: 'var(--text-muted)', marginBottom: 4 }}>
+              <span>Lipides</span>
+              <span>{totalFat} g</span>
+            </div>
+            <div style={{ height: 6, borderRadius: 999, background: 'var(--border)' }}>
+              <div style={{ width: `${fatRatio}%`, height: '100%', borderRadius: 999, background: 'var(--text)' }} />
+            </div>
+          </div>
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.76rem', color: 'var(--text-muted)', marginBottom: 4 }}>
+              <span>Glucides</span>
+              <span>{totalCarbs} g</span>
+            </div>
+            <div style={{ height: 6, borderRadius: 999, background: 'var(--border)' }}>
+              <div style={{ width: `${carbsRatio}%`, height: '100%', borderRadius: 999, background: 'var(--text-muted)' }} />
+            </div>
+          </div>
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.76rem', color: 'var(--text-muted)', marginBottom: 4 }}>
+              <span>Protéines</span>
+              <span>{totalProtein} g</span>
+            </div>
+            <div style={{ height: 6, borderRadius: 999, background: 'var(--border)' }}>
+              <div style={{ width: `${proteinRatio}%`, height: '100%', borderRadius: 999, background: 'var(--surface-hover)' }} />
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* Entries list */}
       {entries.length === 0 ? (
